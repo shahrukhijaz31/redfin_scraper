@@ -1,6 +1,10 @@
 import requests, re, csv
+import time
+import lxml.html
+import sys
 
 from bs4 import BeautifulSoup
+# from lxml import etree
 
 
 header = {
@@ -9,51 +13,132 @@ header = {
 }
 urls = []
 
-result = requests.get('https://www.redfin.com/city/2471/CA/Calabasas/filter/include=sold-5yr', headers=header)
-pages_count = BeautifulSoup(result.content, 'html.parser')
+http_proxy = "http://adminshapegc:WWEMAXGDjht5ok7i@proxy.packetstream.io:31112"
+https_proxy = "http://adminshapegc:WWEMAXGDjht5ok7i@proxy.packetstream.io:31112"
+# http_proxy = "http://Adminshapegc:adminshapegcpassword@us-wa.proxymesh.com:31280"
+# https_proxy = "http://Adminshapegc:adminshapegcpassword@us-wa.proxymesh.com:31280"
 
-for page in pages_count.find_all('a', {'class': 'clickable goToPage'})[::-7]:
-    # manual verification for pages
-    print(page.text.strip(),'pages')
 
-    for i in range(1,int(page.text.strip())):
-        results = requests.get('https://www.redfin.com/city/2471/CA/Calabasas/filter/include=sold-5yr/page-{}'.format(i), headers=header)
-        data = BeautifulSoup(results.content, 'html.parser')
-        for tag in data.find_all('div', {'class': 'scrollable'}):
-            url = 'https://www.redfin.com'+tag.find('a').get('href')
-            urls.append(url)
-    column_header = ['Price', 'Beds', 'Baths', 'URL', 'Sqft', 'Address', 'State', 'Zip_code', 'Sold Price', 'Sold Date']
+proxies = {
+    "http": http_proxy,
+    "https": https_proxy,
+}
 
-    with open('redfin.csv', 'w', encoding='UTF8', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(column_header)
+manual_pages = 9
+pages = 0
+main_url = 'https://www.redfin.com/city/14057/CA/Orinda/filter/include=sold-5yr'
+property_urls = set()
+failed_property_urls = set()
 
-        for url in urls:
-            result_url = requests.get(url, headers=header)
-            soup_data_url = BeautifulSoup(result_url.content, 'html.parser')
-            overview = soup_data_url.find_all('div', {'class': 'statsValue'})
-            #overview
-            price = overview[0].text
-            beds = overview[1].text
-            baths = overview[2].text
-            url_object = url
-            # Sqft
-            square_foot = soup_data_url.find_all('div', {'class': 'stat-block sqft-section'})
-            square_ft = square_foot[0].text
-            address_object = soup_data_url.find_all('div', {'class': 'homeAddress'})
-            address = address_object[0].text
-            state = address[0].text.split(' ')[-2]
-            zip_code = address[0].text.split(' ')[-1]
-            sold_class = soup_data_url.find_all('div', {'class': 'secondary-info'})
-            if sold_class[0].text.split(' ')[5] != 'ago.':
-                sold = sold_class[0].text.split(' ')[5]
-            else:
-                sold = ' '
-            date_object = soup_data_url.find_all('div', {'class': 'secondary-info'})
-            date = date_object[0].text.split(' ')[-3]+' '+date_object[0].text.split(' ')[-2]+date_object[0].text.split(' ')[-1]
-            data_to_write = [price, beds, baths, url_object, square_ft, address, state, zip_code, sold, date]
-            writer.writerow(data_to_write)
+while True:
+    result = requests.get(main_url, headers=header, proxies=proxies)
+    tree = lxml.html.fromstring(result.content)
+    pages = tree.xpath("//*[@class='clickable goToPage'][last()]/text()")[0]
+    if int(manual_pages) == int(pages):
+    # if True:
         break
-    break
+    else:
+        print("retry request")
 
-print('ok')
+column_header = ['Price', 'Beds', 'Baths', 'URL', 'Sqft', 'Address', 'State', 'Zip_code', 'Sold Description', 'Status']
+
+print("There are {} pages in the options".format(pages))
+
+for i in range(1, int(pages)+1):
+    print('{}/page-{}'.format(main_url, i), '\r')
+    
+    try:
+        results = requests.get('{}/page-{}'.format(main_url, i), headers=header, proxies=proxies)
+        tree = lxml.html.fromstring(results.content)
+        property_urls.update(tree.xpath("//*[@class='scrollable']/a/@href"))
+        break
+    except Exception as ex:
+        import pdb;pdb.set_trace()
+        break
+
+with open('redfin.csv', 'a', encoding='UTF8', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(column_header)
+    for property_url in property_urls:
+        try:
+            url = 'https://www.redfin.com{}'.format(property_url)
+            result_url = ""
+            try:
+                result_url = requests.get(url, headers=header, proxies=proxies)
+            except Exception as ex:
+                result_url = requests.get(url, headers=header, proxies=proxies)
+
+            tree = lxml.html.fromstring(result_url.content)
+            overview = tree.xpath("//div[@class='statsValue']//text()")
+            
+            #overview
+            price = overview[0]
+            beds = overview[1]
+            baths = overview[2]
+            url_object = url
+            
+            # Sqft
+            square_ft = tree.xpath("//*[@class='stat-block sqft-section'][1]/span/text()")[0]         
+            address_object = ''. join(str(e) for e in tree.xpath("//*[@class='full-address']//text()"))
+            address = address_object.split(',')[0]
+            state = address_object.split(' ')[-2]
+            zip_code = address_object.split(' ')[-1]
+  
+            sold_class = tree.xpath("//*[@class='secondary-info']/text()")[0] 
+            property_status = ""
+            if len(tree.xpath("//*[contains(@class, 'recently-sold')]")):
+                property_status = "Recently Sold"
+            else:
+                property_status = "Off Market"
+            
+            print(property_status)
+            data_to_write = [price, beds, baths, url_object, square_ft, address, state, zip_code, sold_class, property_status]
+            writer.writerow(data_to_write)
+        except Exception as ex:
+            failed_property_urls.update(property_url)
+            print(property_url)
+            print(ex, "Added again in queue", property_url)
+
+property_urls = failed_property_urls
+with open('redfin.csv', 'a', encoding='UTF8', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(column_header)
+    for property_url in property_urls:
+        try:
+            url = 'https://www.redfin.com{}'.format(property_url)
+            result_url = ""
+            try:
+                result_url = requests.get(url, headers=header, proxies=proxies)
+            except Exception as ex:
+                result_url = requests.get(url, headers=header, proxies=proxies)
+
+            tree = lxml.html.fromstring(result_url.content)
+            overview = tree.xpath("//div[@class='statsValue']//text()")
+            
+            #overview
+            price = overview[0]
+            beds = overview[1]
+            baths = overview[2]
+            url_object = url
+            
+            # Sqft
+            square_ft = tree.xpath("//*[@class='stat-block sqft-section'][1]/span/text()")[0]         
+            address_object = ''. join(str(e) for e in tree.xpath("//*[@class='full-address']//text()"))
+            address = address_object.split(',')[0]
+            state = address_object.split(' ')[-2]
+            zip_code = address_object.split(' ')[-1]
+  
+            sold_class = tree.xpath("//*[@class='secondary-info']/text()")[0] 
+            property_status = ""
+            if len(tree.xpath("//*[contains(@class, 'recently-sold')]")):
+                property_status = "Recently Sold"
+            else:
+                property_status = "Off Market"
+            
+            print(property_status)
+            data_to_write = [price, beds, baths, url_object, square_ft, address, state, zip_code, sold_class, property_status]
+            writer.writerow(data_to_write)
+        except Exception as ex:            
+            print(ex, "Added again in queue", property_url)
+
+print('Scraping Done Successfully')

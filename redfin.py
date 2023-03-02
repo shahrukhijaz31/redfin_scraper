@@ -99,4 +99,46 @@ with open('redfin.csv', 'a', encoding='UTF8', newline='') as f:
             print(property_url)
             print(ex, "Added again in queue", property_url)
 
+property_urls = failed_property_urls
+with open('redfin.csv', 'a', encoding='UTF8', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(column_header)
+    for property_url in property_urls:
+        try:
+            url = 'https://www.redfin.com{}'.format(property_url)
+            result_url = ""
+            try:
+                result_url = requests.get(url, headers=header, proxies=proxies)
+            except Exception as ex:
+                result_url = requests.get(url, headers=header, proxies=proxies)
+
+            tree = lxml.html.fromstring(result_url.content)
+            overview = tree.xpath("//div[@class='statsValue']//text()")
+            
+            #overview
+            price = overview[0]
+            beds = overview[1]
+            baths = overview[2]
+            url_object = url
+            
+            # Sqft
+            square_ft = tree.xpath("//*[@class='stat-block sqft-section'][1]/span/text()")[0]         
+            address_object = ''. join(str(e) for e in tree.xpath("//*[@class='full-address']//text()"))
+            address = address_object.split(',')[0]
+            state = address_object.split(' ')[-2]
+            zip_code = address_object.split(' ')[-1]
+  
+            sold_class = tree.xpath("//*[@class='secondary-info']/text()")[0] 
+            property_status = ""
+            if len(tree.xpath("//*[contains(@class, 'recently-sold')]")):
+                property_status = "Recently Sold"
+            else:
+                property_status = "Off Market"
+            
+            print(property_status)
+            data_to_write = [price, beds, baths, url_object, square_ft, address, state, zip_code, sold_class, property_status]
+            writer.writerow(data_to_write)
+        except Exception as ex:            
+            print(ex, "Added again in queue", property_url)
+
 print('Scraping Done Successfully')

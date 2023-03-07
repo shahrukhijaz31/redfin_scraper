@@ -24,7 +24,7 @@ proxies = {
     "https": https_proxy,
 }
 
-manual_pages = 9
+manual_pages = 35
 pages = 0
 main_url = 'https://www.redfin.com/city/14057/CA/Orinda/filter/include=sold-5yr'
 property_urls = set()

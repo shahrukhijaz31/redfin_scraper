@@ -56,10 +56,11 @@ main_url = 'https://apps.shopify.com/dsers?surface_detail=finding-products-produ
 column_header = ['Name', 'Description', 'Rating', 'Reviews', 'Launched Date', 'Categories', 'Support Email']
 
 
-f = open('A_cat.json')
+f = open('r_cat.json')
 urls = json.load(f)
+failed_urls = []
 
-with open('output/cat_a.csv', 'w', encoding='UTF8', newline='') as file:
+with open('output/cat_r.csv', 'w', encoding='UTF8', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(column_header)
     for url in urls:
@@ -68,8 +69,25 @@ with open('output/cat_a.csv', 'w', encoding='UTF8', newline='') as file:
             writer.writerow(data_to_write)
             print("DONE")
         except Exception as ex:
-            # import pdb;pdb.set_trace()
-            print("data failed ", url)
-        time.sleep(10)
+            try:
+                time.sleep(5)
+                data_to_write = get_scraped_page(url)
+                writer.writerow(data_to_write)
+                print("DONE")
+            except Exception as exce:
+                try:
+                    time.sleep(10)
+                    data_to_write = get_scraped_page(url)
+                    writer.writerow(data_to_write)
+                    print("DONE")
+                except Exception as excep:
+                    failed_urls.append(url)
+                    print("data failed ", url)
+        time.sleep(5)
 f.close()
 
+failed_urls = json.dumps(failed_urls, indent=4)
+
+
+with open("failed.json", "a") as outfile:
+    outfile.write(failed_urls)
